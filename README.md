@@ -1,21 +1,108 @@
 # chips
 
+[![Build Status](https://github.com/floooh/chips/workflows/build_and_test/badge.svg)](https://github.com/floooh/chips/actions)
+
 A toolbox of 8-bit chip-emulators, helper code and complete embeddable 
 system emulators in dependency-free C headers (a subset of C99 that
 compiles on gcc, clang and cl.exe).
 
 Tests and example code is in a separate repo: https://github.com/floooh/chips-test
 
-This is the meaty stuff from the YAKC emulator, rewritten from
-C++ in C, moved into its own project.
-
-The YAKC emulator is here:
-- github repo: https://github.com/floooh/yakc
-- asm.js/wasm demo: http://floooh.github.io/virtualkc/
+The example emulators, compiled to WebAssembly: https://floooh.github.io/tiny8bit/
 
 For schematics, manuals and research material, see: https://github.com/floooh/emu-info
 
 ## What's New
+
+* **24-Dec-2019**: A small "inbetween merge" because the feature branch I
+    was working on became too unfocused: The plan was to add 1541 floppy
+    support to the C64 emulation, but I soon realized that the VIA emulation
+    would essentially need to be rewritten for this. To help getting the
+    VIA emulation right, I started with a VIC-20 system emulation. Here's
+    what's new:
+    - a new VIC-20 system emulation, still quite WIP
+    - started to rewrite the 6522 VIA emulation from scratch, it's still
+      very WIP, but works "at least as good" as the previous implementation
+    - a new VIC-I PAL (MOS 6561) emulation (used by the VIC-20)
+    - moved the datasette emulation out of c64.h into its own header
+      (c1530.h), for attaching peripheral devices the c64.h emulation
+      now emulates the interface ports (IEC and CASPORT) instead, which
+      the peripheral device emulations "connect to"
+    - started with a 1541 floppy drive emulation in the header c1541.h,
+      not functional yet
+    - various optimizations in kbd.h with the goal to make the
+      frequently called keyboard matrix scanning functions so cheap that
+      they can be called in each emulated tick
+    - various other minor cleanups and optimizations in m6526.h (CIA)
+      and m6569.h (VIC-II)
+      
+    I will experiment next with more radical changes to the VIA emulation, idea
+    is to merge the currently separate m6522_iorq() function (which handles
+    reads and writes to the VIA registers) into the regular m6522_tick() function.
+    If those experiments are successful, other chips will use the same
+    model in the future, starting with the IO/timer chips (m6526, i8255,
+    z80pio and z80ctc).
+
+* **13-Dec-2019**: The new 'cycle-stepped' 6502/6510 emulator has been merged
+    to master. The new emulator has a slightly different programming model,
+    please see the updated [header
+    documentation](https://github.com/floooh/chips/blob/master/chips/m6502.h) and
+    [this blog
+    post](https://floooh.github.io/2019/12/13/cycle-stepped-6502.html). I have
+    created a [git tag](https://github.com/floooh/chips/tree/old-m6502) which
+    preserves the previous emulator. All the 6502-based system emulators on the
+    [Tiny Emulators page](https://floooh.github.io/tiny8bit/) have been updated
+    with the new cycle-stepped 6502.
+
+* **14-Oct-2019**: Improvements to the 6502 and C64 emulation:
+    - All tests of the Wolfgang Lorenz test suite are passing now, except:
+        - irq and nmi: the timing for interrupt requests is slightly off,
+        this is most likely because the 6502 emulation currently doesn't
+        delay interrupt handling to the end of the next instruction under
+        some circumstances
+        - cia1ta, cia1tb, cia2ta, cia2tb: these are marked as "under
+        construction" in the test suite's readme, so I assume it's normal
+        that they are failing(?)
+    - With the remaining tests all passing, this means:
+        - all unintended and unstable 6502 instructions are now supported as
+        tested by the Wolfgang Lorenz test suite
+        - all instruction clock cycles are now correct (previously two
+        unintended NOP instructions were one clock tick off because they used
+        the wrong addressing mode)
+    - Some code cleanup and (very minor) optimizations in the 6569 (VIC-II) 
+      emulation, and improved the raster interrupt timing which was slightly
+      off.
+
+* **05-Aug-2019**:
+    - The Z80 and 6502 CPU emulators are now each in a single header instead
+    of being split into a manually written "outer header" which includes
+    another code-generated header with the instruction decoder.
+    No functional changes (I tried a variation of the Z80 emulator which goes
+    back to separate byte registers in a struct instead of merging the
+    registers into 64-bit integers, this saved a couple KBytes code size in
+    WASM but was about 10% slower so I discarded that experiment)
+
+* **31-Dec-2018**: 
+    - A complete set of debugging UI headers using Dear ImGui has been added,
+    each chip emulator has a window which visualizes the pin- and
+    internal-state, and there are helper windows which implement a memory
+    editor, memory "heatmap" (visualize read/write/execute operations),
+    disassembler and CPU step debugger. Finally there are 'integration
+    headers' which implement an entire UI for an emulated system. Note that
+    the implementation part of the UI headers needs to be compiled as C++,
+    the 'public API' of the headers are callable from C though.
+    - The CPU emulators (z80.h and m6502.h) have new trap handling. Instead
+    of predefined "slots", a trap evaluation callback is now installed, which
+    is called at the end of each CPU instruction. This is used extensively by
+    the new debugging UIs to keep track of CPU operations and breakpoint
+    support.
+    - The Amstrad CPC emulation has gained floppy disc loading support, and
+    the video system precision has been improved (many modern graphics demos
+    at least work now instead of having completely broken rendering, but
+    there's still more to be done).
+    - Loading local files via drag'n'drop has been improved in the
+    WebAssembly version, all emulators can now properly detect and load all
+    supported file formats via drag'n'drop.
 
 * **23-Jul-2018**: all chip emulators with callbacks now have an extra
 ```user_data``` argument in the callbacks which is provided in the init
@@ -98,8 +185,8 @@ The Zilog Z80 CPU.
   while the chips Z80 emulator doesn't incrmenent the PC, this shouldn't make
   any difference though
 - properly handles sequences of DD/FD prefix bytes
+- flexible trap callback for hooking in debuggers and "native code" handlers
 - NOT IMPLEMENTED/TODO:
-    - ~~NMI (non-maskable interrupts)~~
     - interrupt mode 0
     - refresh cycle in second half of opcode fetch machine cycle
     - bus request/acknowledge (BUSRQ/BUSAK pins)
@@ -132,44 +219,14 @@ The MOS Technology 6502 CPU.
 - emulates all(?) quirks (like redundant and 'junk' read/write cycles, variable cycle counts in some addressing modes, page boundary wrap-around in indirect jump, etc...), mostly verified via visual6502.org
 - emulates the known and useful 'documented-undocumented' opcodes (like LAX, SAX, DCP, ...)
 - decimal mode implemented, can be disabled
+- same powerful trap callback as the Z80 emulator
 - test coverage:
     - **NESTEST**: completely working (this runs through all documented, and most 'common'
       undocumented instructions but doesn't test decimal mode)
-    - **Wolfgang Lorenz C64 Test Suite** (CPU tests):
-      - _adc*_: OK
-      - _alrb, arrb, ancb_: OK
-      - _and*_: OK
-      - _aneb_: **FAIL**
-      - _asl*_: OK
-      - _aso*_: OK
-      - _axs*_: OK
-      - _b*r_ (branches): OK
-      - _bit*_: OK
-      - _branchwrap_: OK
-      - _brkn_: OK
-      - _cl*_, se*_ (set/clear flags): OK
-      - _cmp*_: OK
-      - _cpuport_: OK (m6510 CPU port)
-      - _cputiming_: **FAIL** (opcodes 5C and 7C show 'clocks: 8 right: 9')
-      - _dcm*_: OK
-      - _dec*, dexn, deyn_: OK
-      - _eor*_: OK
-      - _inc*, inxn, inyn_: OK
-      - _ins*_: OK
-      - _inxn, inyn_: OK
-      - _irq_: **FAIL**
-      - _jmpi, jmpw, jsrw_: OK
-      - _lasay_: **FAIL**
-      - _lax*_: OK
-      - _lda*_: OK
-      - _ldx*, ldy*_: OK
-      - _lse*_: OK
-      - _lsr*_: OK
-      - _lxab_: **FAIL**
-      - _nmi_: **FAIL**
-      - _nop*_: OK
-      - _ora*_: OK
-      - ...
+    - **Wolfgang Lorenz C64 Test Suite**: all CPU opcode tests working, including
+      the unintended and unstable instructions, instruction timings, branchwrap etc.
+      Only two known issues remaining: the **irq** and **nmi** tests (also see
+      the C64 notes in https://github.com/floooh/chips/blob/master/systems/README.md)
 
 ### AY-3-8910 (chips/ay38910.h)
 
@@ -191,6 +248,8 @@ Motorola 6845 video address generator and variants.
     - interlace mode
     - the cursor pin
     - the light-pen functionality
+- NOTE: emulation quality is "ok" for most Amstrad graphics demos, but more
+improvements are needed
 
 ### MC6847 (chips/mc6847.h)
 
@@ -229,7 +288,7 @@ MOS Technology 6526 Complex Interface Adapter
 
 - **Wolfgang Lorenz C64 Test Suite Status**:
   - _cia1pb6, cia1pb7, cia2pb6, cia2pb7_: OK
-  - _cia1ta, cia1tb, cia2ta, cia2tb_: **FAIL** (but improved, doesn't fail immediately)
+  - _cia1ta, cia1tb, cia2ta, cia2tb_: **FAIL** (these are marked as "under construction" in the test-suite readme though)
   - _cia1tab_: OK
   - _cia1tb123, cia2tb123_: OK
   - _cntdef, cnto2_: OK (but note that CNT pin is not emulated, it's always high)
@@ -246,9 +305,21 @@ MOS Technology 6526 Complex Interface Adapter
 
 ### MOS 6569 VIC-II for PAL-B (chips/m6569.h)
 
-MOS Technology 6569 Video Interface Chip VIC-II
+MOS Technology 6569 Video Interface Chip VIC-II (FIXME: needs more info)
 
-(Work In Progress)
+### MOS 6581 SID (chips/m6581.h)
+
+The C64 sound chip (FIXME: needs more info)
+
+### AM40010 Amstrad CPC Gate Array Emulation (chips/am40010.h)
+
+This emulated the Amstrad CPC gate array chip, and also integrates the PAL
+chip for bankswitching in the 6128. 
+
+### UPD765 Floppy Disc Controller (chips/upd765.h)
+
+This is a basic emulation of the UPD765 floppy controller. Currently only
+features required by the Amstrad CPC are implemented.
 
 ## Helper Code
 
@@ -280,5 +351,17 @@ A square-wave beeper found in many simple home computers.
 
 ### Clock (chips/clk.h)
 
-Clock/timer helper functions. This currently only has a single function to
-convert a duration in microseconds into a number of CPU ticks.
+Helper function to convert a clock frequency in Hz to a number of ticks,
+and to keep track of the 'left over' ticks from one frame to the next.
+
+### Floppy Disc Drive (chips/fdd.h)
+
+A basic floppy disc drive emulator, currently only basic functionality
+as needed by the Amstrad CPC emulation.
+
+### Amstrad CPC Disk Image Loader (chips/fdd_cpc.h)
+
+This is an extension-header for fdd.h which adds support to read
+an Amstrad CPC .DSK disk image file and "insert" it into the Floppy Disc Drive
+(fdd.h).
+

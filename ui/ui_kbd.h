@@ -232,7 +232,7 @@ static void _ui_kbd_draw_matrix(ui_kbd_t* win, const ImVec2& canvas_pos, const I
     const float tdx = -10.0f;
     const ImU32 grid_color = ui_util_color(ImGuiCol_Text);
     const ImU32 down_color = ImColor(1.0f, 0.0f, 0.0f, ImGui::GetStyle().Alpha);
-    char buf[8];
+    char buf[32];
     float y = y0;
     for (int l=0; l<win->num_lines; l++, y+=dy) {
         snprintf(buf, sizeof(buf), "%d", l);
@@ -271,10 +271,10 @@ void ui_kbd_draw(ui_kbd_t* win) {
     if (!win->open) {
         return;
     }
-    ImGui::SetNextWindowPos(ImVec2(win->init_x, win->init_y), ImGuiSetCond_Once);
+    ImGui::SetNextWindowPos(ImVec2(win->init_x, win->init_y), ImGuiCond_Once);
     const float min_w = win->num_columns * win->cell_width + win->left_padding + 40.0f;
     const float min_h = win->num_lines * win->cell_height + win->top_padding + 64.0f;
-    ImGui::SetNextWindowSize(ImVec2(min_w, min_h), ImGuiSetCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(min_w, min_h), ImGuiCond_Once);
     ImGui::SetNextWindowSizeConstraints(ImVec2(min_w, min_h), ImVec2(FLT_MAX, FLT_MAX));
     if (ImGui::Begin(win->title, &win->open)) {
         _ui_kbd_draw_plane_combo(win);

@@ -18,13 +18,12 @@
     ~~~
         your own assert macro (default: assert(c))
 
-    You need to include the following headers before including cpc.h:
+    You need to include the following headers before including c64.h:
 
     - chips/m6502.h
     - chips/m6526.h
     - chips/m6569.h
     - chips/m6581.h
-    - chips/beeper.h
     - chips/kbd.h
     - chips/mem.h
     - chips/clk.h
@@ -35,9 +34,191 @@
 
     ## TODO:
 
-    - emulate separate joystick 1 and 2
-    - improve game fast loader compatibility
     - floppy disc support
+
+    ## Tests Status
+    
+    In chips-test/tests/testsuite-2.15/bin
+
+        branchwrap:     ok
+        cia1pb6:        ok
+        cia1pb7:        ok
+        cia1ta:         FAIL (OK, CIA sysclock not implemented)
+        cia1tab:        ok
+        cia1tb:         FAIL (OK, CIA sysclock not implemented)
+        cia1tb123:      ok
+        cia2pb6:        ok
+        cia2pb7:        ok
+        cia2ta:         FAIL (OK, CIA sysclock not implemented)
+        cia2tb:         FAIL (OK, CIA sysclock not implemented)
+        cntdef:         ok
+        cnto2:          ok
+        cpuport:        ok
+        cputiming:      ok
+        flipos:         ok
+        icr01:          ok
+        imr:            ok
+        irq:            ok
+        loadth:         ok
+        mmu:            ok
+        mmufetch:       ok
+        nmi:            FAIL (1 error at 00/5)
+        oneshot:        ok
+        trap1..17:      ok
+
+    In chips-test/tests/vice-tests/CIA:
+    
+    ciavarious:
+        - all green, expect cia15.prg, which tests the CIA TOD clock,
+          which isn't implemented
+
+    cia-timer/cia-timer-oldcias.prg:
+        - left side (CIA-1, IRQ) all green, right side (CIA-2, NMI) some red
+
+    ciatimer/dd0dtest/dd0dtest.prg (NMI related):
+        - some errors
+
+    irqdelay:   all green
+
+    mirrors/ciamirrors.prg: green
+
+    reload0:
+        reload0a.prg:   red
+        reload0b.prg:   red
+
+    shiftregister:
+        cia-icr-test-continues-old.prg: green
+        cia-icr-test-oneshot-old.prg: green
+        cia-icr-test2-continues.prg: some red
+        cia-icr-test2-oneshot.prg: some red
+        cia-sp-test-continues-old.prg: much red (ok, CIA SP not implemented)
+        cia-sp-test-oneshot-old.prg: much red (ok, CIA SP not implemented)
+
+    timerbasics:    all green
+
+    in chips-test/tests/vice-tests/interrupts:
+
+    branchquirk:
+        branchquirk-old.prg:    green
+        branchquirk-nmiold.prg: red
+
+    cia-int:
+        cia-int-irq.prg:    green??
+        cia-int-nmi.prg:    green??
+
+    irq-ackn-bug:
+        cia1.prg:       green
+        cia2.prg:       green
+        irq-ack-vicii.prg:  red
+        irq-ackn_after_cli.prg: ???
+        irq-ackn_after_cli2.prg: ???
+
+    irqdma: (takes a long time)
+        all fail?
+
+    irqdummy/irqdummy.prg:  green
+
+    irqnmi/irqnmi-old.prg: left (irq) green,right (nmi) red
+
+    VICII:
+
+    D011Test:                   TODO
+    banking/banking.prg:        ok
+    border:                     fail (border not opened)
+    colorram/test.prg:          ok
+    colorsplit/colorsplit.prg:  fail (horizontal offsets)
+    dentest:    (these were mostly fixed by moving the raster interrupt check
+                 in m6569.h to tick 63, which made the otherwise some tests
+                 were flickering because a second raster interrupt wasn't stable)
+        den01-48-0.prg:         ok
+        den01-48-1.prg:         ok
+        den01-48-2.prg:         ok
+        den01-49-0.prg:         ok
+        den01-49-1.prg:         ok
+        den01-49-2.prg:         ok
+        den10-48-0.prg:         ok
+        den10-48-1.prg:         ok
+        den10-48-2.prg:         FAIL
+        den10-51-0.prg:         ok
+        den10-51-1.prg:         ok
+        den10-51-2.prg:         ok
+        den10-51-3.prg:         ok
+        denrsel-0.prg:          ok
+        denrsel-1.prg:          ok
+        denrsel-2.prg:          ok
+        denrsel-63.prg:         ok
+        denrsel-s0.prg:         ok
+        denrsel-s1.prg:         ok
+        denrsel-s2.prg:         ok
+        denrsel55.prg:          ok
+    dmadelay:
+        test1-2a-03.prg:        ok
+        test1-2a-04.prg:        FAIL (flickering)
+        test1-2a-10.prg:        ok
+        test1-2a-11.prg:        FAIL (1 char line off)
+        test1-2a-16.prg:        ok
+        test1-2a-17.prg:        FAIL (1 char line off)
+        test1-2a-18.prg:        FAIL (1 char line/col off)
+        test1.prg:              ??? (no reference image)
+        test2-28-05.prg:        ok
+        test2-28-06.prg:        FAIL (flickering)
+        test2-28-11.prg:        ok
+        test2-28-12.prg:        FAIL (one char line off)
+        test2-28-16.prg:        ok
+        test2-28-17.prg:        FAIL (one char line off)
+        test2-28-18.prg:        FAIL (one char line/col off)
+        test3-28-07.prg:        ok
+        test3-28-08.prg:        FAIL (one char line off)
+        test3-28-13.prg:        ok
+        test3-28-14.prg:        FAIL (one char line off)
+        test3-28-18.prg:        ok
+        test3-28-19.prg:        FAIL (one char line off)
+        test3-28-1a.prg:        FAIL (one char col off)
+
+    fldscroll:  broken
+    flibug/blackmail.prg:       reference image doesn't match
+
+    frodotests:
+        3fff.prg                ok
+        d011h3.prg              FAIL (???)
+        fld.prg                 ok
+        lrborder:               FAIL (???)
+        sprsync:                ok (???)
+        stretch:                ok (???)
+        tech-tech:              ok
+        text26:                 ok
+
+    gfxfetch/gfxfetch.prg:      FAIL (reference image doesn't match in boder)
+
+    greydot/greydot.prg:        FAIL (ref image doesn't match, color bars start one tick late)
+
+    lp-trigger:
+        test1.prg:              FAIL (flickering)
+        test2.prg:              FAIL
+
+    lplatency/lplatency.prg:    FAIL
+
+    movesplit:                  ????
+
+    phi1timing:                 FAIL
+
+    rasterirq:                  FAIL (reference image doesn't match)
+    
+    screenpos:                  FAIL (reference image doesn't match)
+
+    split-tests:
+        bascan          FAIL
+        fetchsplit      FAIL (flickering characters)
+        lightpen        FAIL
+        modesplit       FAIL (ref image doesn't match)
+        spritescan      FAIL
+
+    sprite0move         ???
+
+    spritebug           TODO
+    all other sprite tests: TODO
+
+    vicii-timing:       FAIL (ref image doesn't match)
 
     ## zlib/libpng license
 
@@ -64,17 +245,18 @@
 extern "C" {
 #endif
 
+#define C64_FREQUENCY (985248)              /* clock frequency in Hz */
 #define C64_MAX_AUDIO_SAMPLES (1024)        /* max number of audio samples in internal sample buffer */
 #define C64_DEFAULT_AUDIO_SAMPLES (128)     /* default number of samples in internal sample buffer */ 
-#define C64_MAX_TAPE_SIZE (512*1024)        /* max size of cassette tape image */
 
 /* C64 joystick types */
 typedef enum {
     C64_JOYSTICKTYPE_NONE,
     C64_JOYSTICKTYPE_DIGITAL_1,
     C64_JOYSTICKTYPE_DIGITAL_2,
-    C64_JOYSTICKTYPE_PADDLE_1,  /* FIXME: not emulated */
-    C64_JOYSTICKTYPE_PADDLE_2,  /* FIXME: not emulated */
+    C64_JOYSTICKTYPE_DIGITAL_12,    /* input routed to both joysticks */
+    C64_JOYSTICKTYPE_PADDLE_1,      /* FIXME: not emulated */
+    C64_JOYSTICKTYPE_PADDLE_2,      /* FIXME: not emulated */
 } c64_joystick_type_t;
 
 /* joystick mask bits */
@@ -89,6 +271,19 @@ typedef enum {
 #define C64_CPUPORT_HIRAM (1<<1)
 #define C64_CPUPORT_CHAREN (1<<2)
 
+/* casette port bits, same as C1530_CASPORT_* */
+#define C64_CASPORT_MOTOR   (1<<0)  /* 1: motor off, 0: motor on */
+#define C64_CASPORT_READ    (1<<1)  /* 1: read signal from datasette, connected to CIA-1 FLAG */
+#define C64_CASPORT_WRITE   (1<<2)  /* not implemented */
+#define C64_CASPORT_SENSE   (1<<3)  /* 1: play button up, 0: play button down */
+
+/* IEC port bits, same as C1541_IECPORT_* */
+#define C64_IECPORT_RESET   (1<<0)  /* 1: RESET, 0: no reset */
+#define C64_IECPORT_SRQIN   (1<<1)  /* connected to CIA-1 FLAG */
+#define C64_IECPORT_DATA    (1<<2)
+#define C64_IECPORT_CLK     (1<<3)
+#define C64_IECPORT_ATN     (1<<4)
+
 /* audio sample data callback */
 typedef void (*c64_audio_callback_t)(const float* samples, int num_samples, void* user_data);
 
@@ -97,7 +292,8 @@ typedef struct {
     c64_joystick_type_t joystick_type;  /* default is C64_JOYSTICK_NONE */
 
     /* video output config (if you don't want video decoding, set these to 0) */
-    void* pixel_buffer;         /* pointer to a linear RGBA8 pixel buffer, at least 392*272*4 bytes */
+    void* pixel_buffer;         /* pointer to a linear RGBA8 pixel buffer, 
+                                   at least 512*312*4 bytes, or ask via c64_max_display_size() */
     int pixel_buffer_size;      /* size of the pixel buffer in bytes */
 
     /* optional user-data for callback functions */
@@ -106,10 +302,8 @@ typedef struct {
     /* audio output config (if you don't want audio, set audio_cb to zero) */
     c64_audio_callback_t audio_cb;  /* called when audio_num_samples are ready */
     int audio_num_samples;          /* default is C64_AUDIO_NUM_SAMPLES */
-    int audio_sample_rate;          /* playback sample rate, default is 44100 */
+    int audio_sample_rate;          /* playback sample rate in Hz, default is 44100 */
     float audio_sid_volume;         /* audio volume of the SID chip (0.0 .. 1.0), default is 1.0 */
-    float audio_beeper_volume;      /* audio volume of the tape-beeper (0.0 .. 1.0), default is 0.1 */
-    bool audio_tape_sound;          /* if true, tape loading is audible */
 
     /* ROM images */
     const void* rom_char;           /* 4 KByte character ROM dump */
@@ -122,17 +316,18 @@ typedef struct {
 
 /* C64 emulator state */
 typedef struct {
+    uint64_t pins;
     m6502_t cpu;
     m6526_t cia_1;
     m6526_t cia_2;
     m6569_t vic;
     m6581_t sid;
-    beeper_t beeper;            /* used for the tape-sound */
     
     bool valid;
     c64_joystick_type_t joystick_type;
-    uint8_t joystick_active;
-    bool io_mapped;             /* true when D000..DFFF is has IO area mapped in */
+    bool io_mapped;             /* true when D000..DFFF has IO area mapped in */
+    uint8_t cas_port;           /* cassette port, shared with c1530_t if datasette is connected */
+    uint8_t iec_port;           /* IEC serial port, shared with c1541_t if connected */
     uint8_t cpu_port;           /* last state of CPU port (for memory mapping) */
     uint8_t kbd_joy1_mask;      /* current joystick-1 state from keyboard-joystick emulation */
     uint8_t kbd_joy2_mask;      /* current joystick-2 state from keyboard-joystick emulation */
@@ -140,10 +335,9 @@ typedef struct {
     uint8_t joy_joy2_mask;      /* current joystick-2 state from c64_joystick() */
     uint16_t vic_bank_select;   /* upper 4 address bits from CIA-2 port A */
 
-    clk_t clk;
-    kbd_t kbd;
-    mem_t mem_cpu;
-    mem_t mem_vic;
+    kbd_t kbd;                  /* keyboard matrix state */
+    mem_t mem_cpu;              /* CPU-visible memory mapping */
+    mem_t mem_vic;              /* VIC-visible memory mapping */
 
     void* user_data;
     uint32_t* pixel_buffer;
@@ -157,14 +351,6 @@ typedef struct {
     uint8_t rom_char[0x1000];       /* 4 KB character ROM image */
     uint8_t rom_basic[0x2000];      /* 8 KB BASIC ROM image */
     uint8_t rom_kernal[0x2000];     /* 8 KB KERNAL V3 ROM image */
-
-    bool tape_motor;    /* tape motor on/off */
-    bool tape_button;   /* play button on tape pressed/unpressed */
-    bool tape_sound;    /* true when tape is audible */
-    int tape_size;      /* tape_size > 0: a tape is inserted */
-    int tape_pos;        
-    int tape_tick_count;
-    uint8_t tape_buf[C64_MAX_TAPE_SIZE];
 } c64_t;
 
 /* initialize a new C64 instance */
@@ -181,8 +367,10 @@ int c64_display_width(c64_t* sys);
 int c64_display_height(c64_t* sys);
 /* reset a C64 instance */
 void c64_reset(c64_t* sys);
-/* tick C64 instance for a given number of microseconds */
+/* tick C64 instance for a given number of microseconds, also updates keyboard state */
 void c64_exec(c64_t* sys, uint32_t micro_seconds);
+/* ...or optionally: tick the C64 instance once, does not update keyboard state! */
+void c64_tick(c64_t* sys);
 /* send a key-down event to the C64 */
 void c64_key_down(c64_t* sys, int key_code);
 /* send a key-up event to the C64 */
@@ -193,15 +381,7 @@ void c64_set_joystick_type(c64_t* sys, c64_joystick_type_t type);
 c64_joystick_type_t c64_joystick_type(c64_t* sys);
 /* set joystick mask (combination of C64_JOYSTICK_*) */
 void c64_joystick(c64_t* sys, uint8_t joy1_mask, uint8_t joy2_mask);
-/* insert a tape file */
-bool c64_insert_tape(c64_t* sys, const uint8_t* ptr, int num_bytes);
-/* remove tape file */
-void c64_remove_tape(c64_t* sys);
-/* start the tape (press the Play button) */
-void c64_start_tape(c64_t* sys);
-/* stop the tape (unpress the Play button */
-void c64_stop_tape(c64_t* sys);
-/* quickload a .bin file (only tested with wlorenz tests) */
+/* quickload a .bin/.prg file */
 bool c64_quickload(c64_t* sys, const uint8_t* ptr, int num_bytes);
 
 #ifdef __cplusplus
@@ -221,11 +401,10 @@ bool c64_quickload(c64_t* sys, const uint8_t* ptr, int num_bytes);
 #define _C64_DBG_DISPLAY_WIDTH ((_M6569_HTOTAL+1)*8)
 #define _C64_DBG_DISPLAY_HEIGHT (_M6569_VTOTAL+1)
 #define _C64_DISPLAY_SIZE (_C64_DBG_DISPLAY_WIDTH*_C64_DBG_DISPLAY_HEIGHT*4)
-#define _C64_FREQUENCY (985248)
 #define _C64_DISPLAY_X (64)
 #define _C64_DISPLAY_Y (24)
 
-static uint64_t _c64_tick(uint64_t pins, void* user_data);
+static uint64_t _c64_tick(c64_t* sys, uint64_t pins);
 static uint8_t _c64_cpu_port_in(void* user_data);
 static void _c64_cpu_port_out(uint8_t data, void* user_data);
 static void _c64_cia1_out(int port_id, uint8_t data, void* user_data);
@@ -236,7 +415,6 @@ static uint16_t _c64_vic_fetch(uint16_t addr, void* user_data);
 static void _c64_update_memory_map(c64_t* sys);
 static void _c64_init_key_map(c64_t* sys);
 static void _c64_init_memory_map(c64_t* sys);
-static bool _c64_tape_tick(c64_t* sys);
 
 #define _C64_DEFAULT(val,def) (((val) != 0) ? (val) : (def));
 #define _C64_CLEAR(val) memset(&val, 0, sizeof(val))
@@ -248,7 +426,6 @@ void c64_init(c64_t* sys, const c64_desc_t* desc) {
     memset(sys, 0, sizeof(c64_t));
     sys->valid = true;
     sys->joystick_type = desc->joystick_type;
-    sys->tape_sound = desc->audio_tape_sound;
     CHIPS_ASSERT(desc->rom_char && (desc->rom_char_size == sizeof(sys->rom_char)));
     CHIPS_ASSERT(desc->rom_basic && (desc->rom_basic_size == sizeof(sys->rom_basic)));
     CHIPS_ASSERT(desc->rom_kernal && (desc->rom_kernal_size == sizeof(sys->rom_kernal)));
@@ -261,19 +438,18 @@ void c64_init(c64_t* sys, const c64_desc_t* desc) {
     CHIPS_ASSERT(sys->num_samples <= C64_MAX_AUDIO_SAMPLES);
 
     /* initialize the hardware */
-    clk_init(&sys->clk, _C64_FREQUENCY);
     sys->cpu_port = 0xF7;       /* for initial memory mapping */
     sys->io_mapped = true;
+    sys->cas_port = C64_CASPORT_MOTOR|C64_CASPORT_SENSE;
     
     m6502_desc_t cpu_desc;
     _C64_CLEAR(cpu_desc);
-    cpu_desc.tick_cb = _c64_tick;
-    cpu_desc.in_cb = _c64_cpu_port_in;
-    cpu_desc.out_cb = _c64_cpu_port_out;
+    cpu_desc.m6510_in_cb = _c64_cpu_port_in;
+    cpu_desc.m6510_out_cb = _c64_cpu_port_out;
     cpu_desc.m6510_io_pullup = 0x17;
     cpu_desc.m6510_io_floating = 0xC8;
-    cpu_desc.user_data = sys;
-    m6502_init(&sys->cpu, &cpu_desc);
+    cpu_desc.m6510_user_data = sys;
+    sys->pins = m6502_init(&sys->cpu, &cpu_desc);
 
     m6526_desc_t cia_desc;
     _C64_CLEAR(cia_desc);
@@ -299,20 +475,15 @@ void c64_init(c64_t* sys, const c64_desc_t* desc) {
 
     const int sound_hz = _C64_DEFAULT(desc->audio_sample_rate, 44100);
     const float sid_volume = _C64_DEFAULT(desc->audio_sid_volume, 1.0f);
-    const float beeper_volume = _C64_DEFAULT(desc->audio_beeper_volume, 0.1f);
     m6581_desc_t sid_desc;
     _C64_CLEAR(sid_desc);
-    sid_desc.tick_hz = _C64_FREQUENCY;
+    sid_desc.tick_hz = C64_FREQUENCY;
     sid_desc.sound_hz = sound_hz;
     sid_desc.magnitude = sid_volume;
     m6581_init(&sys->sid, &sid_desc);
 
-    beeper_init(&sys->beeper, _C64_FREQUENCY, sound_hz, beeper_volume);
-
     _c64_init_key_map(sys);
     _c64_init_memory_map(sys);
-
-    m6502_reset(&sys->cpu);
 }
 
 void c64_discard(c64_t* sys) {
@@ -348,25 +519,27 @@ void c64_reset(c64_t* sys) {
     sys->kbd_joy1_mask = sys->kbd_joy2_mask = 0;
     sys->joy_joy1_mask = sys->joy_joy2_mask = 0;
     sys->io_mapped = true;
+    sys->cas_port = C64_CASPORT_MOTOR|C64_CASPORT_SENSE;
     _c64_update_memory_map(sys);
-    m6502_reset(&sys->cpu);
+    sys->pins |= M6502_RES;
     m6526_reset(&sys->cia_1);
     m6526_reset(&sys->cia_2);
     m6569_reset(&sys->vic);
     m6581_reset(&sys->sid);
-    beeper_reset(&sys->beeper);
-    sys->tape_motor = false;
-    sys->tape_button = false;
-    sys->tape_size = 0;
-    sys->tape_pos = 0;
-    sys->tape_tick_count = 0;
+}
+
+void c64_tick(c64_t* sys) {
+    sys->pins = _c64_tick(sys, sys->pins);
 }
 
 void c64_exec(c64_t* sys, uint32_t micro_seconds) {
     CHIPS_ASSERT(sys && sys->valid);
-    uint32_t ticks_to_run = clk_ticks_to_run(&sys->clk, micro_seconds);
-    uint32_t ticks_executed = m6502_exec(&sys->cpu, ticks_to_run);
-    clk_ticks_executed(&sys->clk, ticks_executed);
+    uint32_t num_ticks = clk_us_to_ticks(C64_FREQUENCY, micro_seconds);
+    uint64_t pins = sys->pins;
+    for (uint32_t ticks = 0; ticks < num_ticks; ticks++) {
+        pins = _c64_tick(sys, pins);
+    }
+    sys->pins = pins;
     kbd_update(&sys->kbd);
 }
 
@@ -386,11 +559,18 @@ void c64_key_down(c64_t* sys, int key_code) {
             default: kbd_key_down(&sys->kbd, key_code); break;
         }
         if (m != 0) {
-            if (sys->joystick_type == C64_JOYSTICKTYPE_DIGITAL_1) {
-                sys->kbd_joy1_mask |= m;
-            }
-            else {
-                sys->kbd_joy2_mask |= m;
+            switch (sys->joystick_type) {
+                case C64_JOYSTICKTYPE_DIGITAL_1:
+                    sys->kbd_joy1_mask |= m;
+                    break;
+                case C64_JOYSTICKTYPE_DIGITAL_2:
+                    sys->kbd_joy2_mask |= m;
+                    break;
+                case C64_JOYSTICKTYPE_DIGITAL_12:
+                    sys->kbd_joy1_mask |= m;
+                    sys->kbd_joy2_mask |= m;
+                    break;
+                default: break;
             }
         }
     }
@@ -412,11 +592,18 @@ void c64_key_up(c64_t* sys, int key_code) {
             default: kbd_key_up(&sys->kbd, key_code); break;
         }
         if (m != 0) {
-            if (sys->joystick_type == C64_JOYSTICKTYPE_DIGITAL_1) {
-                sys->kbd_joy1_mask &= ~m;
-            }
-            else {
-                sys->kbd_joy2_mask &= ~m;
+            switch (sys->joystick_type) {
+                case C64_JOYSTICKTYPE_DIGITAL_1:
+                    sys->kbd_joy1_mask &= ~m;
+                    break;
+                case C64_JOYSTICKTYPE_DIGITAL_2:
+                    sys->kbd_joy2_mask &= ~m;
+                    break;
+                case C64_JOYSTICKTYPE_DIGITAL_12:
+                    sys->kbd_joy1_mask &= ~m;
+                    sys->kbd_joy2_mask &= ~m;
+                    break;
+                default: break;
             }
         }
     }
@@ -438,37 +625,28 @@ void c64_joystick(c64_t* sys, uint8_t joy1_mask, uint8_t joy2_mask) {
     sys->joy_joy2_mask = joy2_mask;
 }
 
-static uint64_t _c64_tick(uint64_t pins, void* user_data) {
-    c64_t* sys = (c64_t*) user_data;
+static uint64_t _c64_tick(c64_t* sys, uint64_t pins) {
+
+    /* tick the CPU */
+    pins = m6502_tick(&sys->cpu, pins);
     const uint16_t addr = M6502_GET_ADDR(pins);
-
-    /* tick the datasette, when the datasette output pulse
-       toggles, the FLAG input pin on CIA-1 will go active for 1 tick
-    */
-    uint64_t cia1_pins = pins;
-    if (_c64_tape_tick(sys)) {
-        cia1_pins |= M6526_FLAG;
-    }
-
-    /* if the tape should be audible, toggle the beeper */
-    if (sys->tape_sound) {
-        beeper_tick(&sys->beeper);
-    }
 
     /* tick the SID */
     if (m6581_tick(&sys->sid)) {
         /* new audio sample ready */
-        float sample = sys->sid.sample;
-        if (sys->tape_motor) {
-            sample += sys->beeper.sample;
-        }
-        sys->sample_buffer[sys->sample_pos++] = sample;
+        sys->sample_buffer[sys->sample_pos++] = sys->sid.sample;
         if (sys->sample_pos == sys->num_samples) {
             if (sys->audio_cb) {
                 sys->audio_cb(sys->sample_buffer, sys->num_samples, sys->user_data);
             }
             sys->sample_pos = 0;
         }
+    }
+
+    /* cassette port READ pin is connected to CIA-1 FLAG pin */
+    uint64_t cia1_pins = pins;
+    if (sys->cas_port & C64_CASPORT_READ) {
+        cia1_pins |= M6526_FLAG;
     }
 
     /* tick the CIAs:
@@ -479,8 +657,14 @@ static uint64_t _c64_tick(uint64_t pins, void* user_data) {
     if (m6526_tick(&sys->cia_1, cia1_pins & ~M6502_IRQ) & M6502_IRQ) {
         pins |= M6502_IRQ;
     }
+    else {
+        pins &= ~M6502_IRQ;
+    }
     if (m6526_tick(&sys->cia_2, pins & ~M6502_IRQ) & M6502_IRQ) {
         pins |= M6502_NMI;
+    }
+    else {
+        pins &= ~M6502_NMI;
     }
 
     /* tick the VIC-II display chip:
@@ -570,7 +754,7 @@ static uint8_t _c64_cpu_port_in(void* user_data) {
         bit 4: [in] datasette button status (1: no button pressed)
     */
     uint8_t val = 7;
-    if (!sys->tape_button) {
+    if (sys->cas_port & C64_CASPORT_SENSE) {
         val |= (1<<4);
     }
     return val;
@@ -587,10 +771,12 @@ static void _c64_cpu_port_out(uint8_t data, void* user_data) {
         bit 5: [out] datasette motor control (1: motor off)
     */
     if (data & (1<<5)) {
-        sys->tape_motor = false;
+        /* motor off */
+        sys->cas_port |= C64_CASPORT_MOTOR;
     }
     else {
-        sys->tape_motor = true;
+        /* motor on */
+        sys->cas_port &= ~C64_CASPORT_MOTOR;
     }
     /* only update memory configuration if the relevant bits have changed */
     bool need_mem_update = 0 != ((sys->cpu_port ^ data) & 7);
@@ -626,7 +812,6 @@ static uint8_t _c64_cia1_in(int port_id, void* user_data) {
             combined keyboard matrix columns and joystick 1
     */
     if (port_id == M6526_PORT_A) {
-        /* FIXME: currently use the same input for joystick 2 and joystick 1 */
         return ~(sys->kbd_joy2_mask | sys->joy_joy2_mask);
     }
     else {
@@ -728,6 +913,7 @@ static void _c64_update_memory_map(c64_t* sys) {
 }
 
 static void _c64_init_memory_map(c64_t* sys) {
+    /* seperate memory mapping for CPU and VIC-II */
     mem_init(&sys->mem_cpu);
     mem_init(&sys->mem_vic);
 
@@ -828,94 +1014,6 @@ static void _c64_init_key_map(c64_t* sys) {
     kbd_register_key(&sys->kbd, 0xF8, 3, 0, 1);
 }
 
-/*=== CASSETTE TAPE FILE LOADING =============================================*/
-
-/* C64 TAP file header */
-typedef struct {
-    uint8_t signature[12];  /* "C64-TAPE-RAW" */
-    uint8_t version;        /* 0x00 or 0x01 */
-    uint8_t pad[3];         /* reserved */
-    uint32_t size;          /* size of the following data */
-} _c64_tap_header;
-
-bool c64_insert_tape(c64_t* sys, const uint8_t* ptr, int num_bytes) {
-    CHIPS_ASSERT(sys && sys->valid && ptr);
-    c64_remove_tape(sys);
-    if (num_bytes <= (int) sizeof(_c64_tap_header)) {
-        return false;
-    }
-    const _c64_tap_header* hdr = (const _c64_tap_header*) ptr;
-    ptr += sizeof(_c64_tap_header);
-    const uint8_t sig[12] = { 'C','6','4','-','T','A','P','E','-','R','A','W'};
-    for (int i = 0; i < 12; i++) {
-        if (sig[i] != hdr->signature[i]) {
-            return false;
-        }
-    }
-    if (1 != hdr->version) {
-        return false;
-    }
-    if (num_bytes < (int)(hdr->size + sizeof(_c64_tap_header))) {
-        return false;
-    }
-    if (num_bytes > (int)sizeof(sys->tape_buf)) {
-        return false;
-    }
-    memcpy(sys->tape_buf, ptr, hdr->size);
-    sys->tape_size = hdr->size;
-    sys->tape_pos = 0;
-    sys->tape_tick_count = 0;
-    return true;
-}
-
-void c64_remove_tape(c64_t* sys) {
-    CHIPS_ASSERT(sys && sys->valid);
-    sys->tape_motor = false;
-    sys->tape_button = false;
-    sys->tape_size = 0;
-    sys->tape_pos = 0;
-    sys->tape_tick_count = 0;
-}
-
-void c64_start_tape(c64_t* sys) {
-    CHIPS_ASSERT(sys && sys->valid);
-    sys->tape_button = true;
-    sys->tape_motor = true;
-}
-
-void c64_stop_tape(c64_t* sys) {
-    CHIPS_ASSERT(sys && sys->valid);
-    sys->tape_button = false;
-    sys->tape_motor = false;
-}
-
-static bool _c64_tape_tick(c64_t* sys) {
-    if (sys->tape_motor && (sys->tape_size > 0) && (sys->tape_pos <= sys->tape_size)) {
-        if (sys->tape_tick_count == 0) {
-            if (sys->tape_sound) {
-                beeper_toggle(&sys->beeper);
-            }
-            uint8_t val = sys->tape_buf[sys->tape_pos++];
-            if (val == 0) {
-                uint8_t s[3];
-                for (int i = 0; i < 3; i++) {
-                    s[i] = sys->tape_buf[sys->tape_pos++];
-                }
-                sys->tape_tick_count = (s[2]<<16) | (s[1]<<8) | s[0];
-            }
-            else {
-                sys->tape_tick_count = val * 8;
-            }
-            return true;
-        }
-        else {
-            sys->tape_tick_count--;
-        }
-    }
-    return false;
-}
-
-/* FIXME: add proper snapshot file formats */
 bool c64_quickload(c64_t* sys, const uint8_t* ptr, int num_bytes) {
     CHIPS_ASSERT(sys && sys->valid);
     if (num_bytes < 2) {

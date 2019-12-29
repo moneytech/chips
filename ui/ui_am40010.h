@@ -178,7 +178,7 @@ static void _ui_am40010_draw_sync_irq(ui_am40010_t* win) {
     am40010_video_t* v = &win->am40010->video;
     ImGui::Text("Mode    %d", v->mode);
     ImGui::Text("IntCnt  %02X", v->intcnt);
-    ImGui::Text("HCount  %02X", v->hcount);
+    ImGui::Text("HSCount %02X", v->hscount);
     ImGui::Text("ClkCnt  %02X", v->clkcnt);
     ImGui::Text("Sync    %s", v->sync ? "ON":"OFF");
     ImGui::Text("IRQ     %s", v->intr ? "ON":"OFF");
@@ -229,8 +229,8 @@ void ui_am40010_draw(ui_am40010_t* win) {
     if (!win->open) {
         return;
     }
-    ImGui::SetNextWindowPos(ImVec2(win->init_x, win->init_y), ImGuiSetCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(win->init_w, win->init_h), ImGuiSetCond_Once);
+    ImGui::SetNextWindowPos(ImVec2(win->init_x, win->init_y), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(win->init_w, win->init_h), ImGuiCond_Once);
     if (ImGui::Begin(win->title, &win->open)) {
         ImGui::BeginChild("##chip", ImVec2(176, 0), true);
         ui_chip_draw(&win->chip, win->am40010->pins);

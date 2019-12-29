@@ -75,7 +75,9 @@
         it needs to share memory accesses with the video system. Also, CPU
         accesses to this RAM block are visible as 'display needling' artefacts.
 
-        Both video memory effects are not currently emulated.
+        (NOTE: the slow video memory access is not emulation, display needling
+        is emulated, but I haven't verified against real hardware 
+        whether it actually looks correct)
 
     ### Special Operating System Conditions
 
@@ -130,7 +132,7 @@
             
     ## The Module System:
 
-    This emulator supports the most common RAM- and ROM-modules,
+    The emulator supports the most common RAM- and ROM-modules,
     but doesn't emulate special-hardware modules like the V24 or 
     A/D converter module.
 
@@ -187,8 +189,7 @@
       resolution, this was realized by using 1 bit from the 
       pixel-bank and the other bit from the color-bank, so setting
       one pixel required 2 memory accesses and a bank switch. Maybe
-      this was the reason why this mode was hardly used (this
-      per-pixel-color mode is currently not implemented in this emulator).
+      this was the reason why this mode was hardly used.
     - Improved '90-degree-rotated' video memory layout, the 320x256
       pixel video memory was organized as 40 vertical stacks of 256 bytes,
       and the entire video memory was linear, this was perfectly suited
@@ -228,10 +229,7 @@
 
     - optionally proper keyboard emulation (the current implementation
       uses a shortcut to directly write the key code into a memory address)
-    - video-decoding is currently per-scanline
-    - KC85/4 pixel-color mode
     - wait states for video RAM access
-    - display needling
     - audio volume is currently not implemented
 
     ## zlib/libpng license
@@ -315,7 +313,7 @@ typedef struct {
 
     /* audio output config (if you don't want audio, set audio_cb to zero) */
     kc85_audio_callback_t audio_cb;     /* called when audio_num_samples are ready */
-    int audio_num_samples;              /* default is KC85_AUDIO_NUM_SAMPLES */
+    int audio_num_samples;              /* default is KC85_DEFAULT_AUDIO_SAMPLES */
     int audio_sample_rate;              /* playback sample rate, default is 44100 */
     float audio_volume;                 /* audio volume (0.0 .. 1.0), default is 0.4 */
     
@@ -390,9 +388,8 @@ typedef struct {
     uint8_t io86;           /* byte latch at port 0x86, only on KC85/4 */
     bool blink_flag;        /* foreground color blinking flag toggled by CTC */
 
-    int scanline_period;
-    int scanline_counter;
-    int cur_scanline;
+    uint32_t h_tick;        /* video timing generator counter */
+    uint32_t v_count;
 
     clk_t clk;
     kbd_t kbd;
@@ -477,12 +474,11 @@ bool kc85_quickload(kc85_t* sys, const uint8_t* ptr, int num_bytes);
 #define _KC85_2_3_FREQUENCY (1750000)
 #define _KC85_4_FREQUENCY (1770000)
 #define _KC85_IRM0_PAGE (4)
-#define _KC85_NUM_SCANLINES (312)
 
 static uint64_t _kc85_tick(int num, uint64_t pins, void* user_data);
+static uint64_t _kc85_tick_video(kc85_t* sys, int num_cpu_ticks, uint64_t pins);
 static uint8_t _kc85_pio_in(int port_id, void* user_data);
 static void _kc85_pio_out(int port_id, uint8_t data, void* user_data);
-static void _kc85_decode_scanline(kc85_t* sys);
 static void _kc85_update_memory_map(kc85_t* sys);
 static void _kc85_init_memory_map(kc85_t* sys);
 static void _kc85_handle_keyboard(kc85_t* sys);
@@ -580,9 +576,6 @@ void kc85_init(kc85_t* sys, const kc85_desc_t* desc) {
     beeper_init(&sys->beeper_1, freq_hz, audio_hz, audio_vol);
     beeper_init(&sys->beeper_2, freq_hz, audio_hz, audio_vol);
 
-    sys->scanline_period = (sys->type == KC85_TYPE_4) ? 113 : 112;
-    sys->scanline_counter = sys->scanline_period;
-
     /* expansion module system */
     _kc85_exp_init(sys);
 
@@ -638,8 +631,6 @@ void kc85_reset(kc85_t* sys) {
     sys->pio_b = 0;
     sys->io84 = 0;
     sys->io86 = 0;
-    sys->cur_scanline = 0;
-    sys->scanline_counter = sys->scanline_period;
     _kc85_exp_reset(sys);
     sys->pio_a = KC85_PIO_A_RAM | KC85_PIO_A_RAM_RO | KC85_PIO_A_IRM | KC85_PIO_A_CAOS_ROM;
     _kc85_update_memory_map(sys);
@@ -667,51 +658,215 @@ void kc85_key_up(kc85_t* sys, int key_code) {
     kbd_key_up(&sys->kbd, key_code);
 }
 
-static uint64_t _kc85_tick(int num_ticks, uint64_t pins, void* user_data) {
-    kc85_t* sys = (kc85_t*) user_data;
+/* hardwired foreground colors */
+static uint32_t _kc85_fg_pal[16] = {
+    0xFF000000,     /* black */
+    0xFFFF0000,     /* blue */
+    0xFF0000FF,     /* red */
+    0xFFFF00FF,     /* magenta */
+    0xFF00FF00,     /* green */
+    0xFFFFFF00,     /* cyan */
+    0xFF00FFFF,     /* yellow */
+    0xFFFFFFFF,     /* white */
+    0xFF000000,     /* black #2 */
+    0xFFFF00A0,     /* violet */
+    0xFF00A0FF,     /* orange */
+    0xFFA000FF,     /* purple */
+    0xFFA0FF00,     /* blueish green */
+    0xFFFFA000,     /* greenish blue */
+    0xFF00FFA0,     /* yellow-green */
+    0xFFFFFFFF,     /* white #2 */
+};
 
-    /* video decoding */
-    sys->scanline_counter -= num_ticks;
-    if (sys->scanline_counter <= 0) {
-        sys->scanline_counter += sys->scanline_period;
-        if (sys->cur_scanline < _KC85_DISPLAY_HEIGHT) {
-            _kc85_decode_scanline(sys);
-        }
-        sys->cur_scanline++;
-        /* vertical blank signal? this triggers CTC2 for the video blinking effect */
-        if (sys->cur_scanline >= _KC85_NUM_SCANLINES) {
-            sys->cur_scanline = 0;
-            pins |= Z80CTC_CLKTRG2;
+/* background colors */
+static uint32_t _kc85_bg_pal[8] = {
+    0xFF000000,      /* black */
+    0xFFA00000,      /* dark-blue */
+    0xFF0000A0,      /* dark-red */
+    0xFFA000A0,      /* dark-magenta */
+    0xFF00A000,      /* dark-green */
+    0xFFA0A000,      /* dark-cyan */
+    0xFF00A0A0,      /* dark-yellow */
+    0xFFA0A0A0,      /* gray */
+};
+
+/* the KC85/4 HICOLOR palette */
+static uint32_t _kc85_hicolor[4] = {
+    0xFF000000,     /* black */
+    0xFF0000FF,     /* red */
+    0xFFFFFF00,     /* cyan */
+    0xFFFFFFFF,     /* white */
+};
+
+static inline void _kc85_decode_8pixels(uint32_t* ptr, uint8_t pixels, uint8_t colors, bool force_bg) {
+    /*
+        select foreground- and background color:
+        bit 7: blinking
+        bits 6..3: foreground color
+        bits 2..0: background color
+
+        index 0 is background color, index 1 is foreground color
+    */
+    const uint8_t bg_index = colors & 0x7;
+    const uint8_t fg_index = (colors>>3)&0xF;
+    const unsigned int bg = _kc85_bg_pal[bg_index];
+    const unsigned int fg = force_bg ? bg : _kc85_fg_pal[fg_index];
+    ptr[0] = pixels & 0x80 ? fg : bg;
+    ptr[1] = pixels & 0x40 ? fg : bg;
+    ptr[2] = pixels & 0x20 ? fg : bg;
+    ptr[3] = pixels & 0x10 ? fg : bg;
+    ptr[4] = pixels & 0x08 ? fg : bg;
+    ptr[5] = pixels & 0x04 ? fg : bg;
+    ptr[6] = pixels & 0x02 ? fg : bg;
+    ptr[7] = pixels & 0x01 ? fg : bg;   
+}
+
+static uint64_t _kc85_video_kc85_2_3(kc85_t* sys, int num_cpu_ticks, uint64_t cpu_pins) {
+    /* emulate display needing on KC85/2 and /3, this happens when the
+       CPU accesses video memory, which will force the background color
+       a short duration
+
+       FIXME: Z80_RD creates a weird static pattern when "MENU" is called
+    */
+    bool cpu_access = false;
+    if (0 != (cpu_pins & Z80_WR)) {
+        uint16_t addr = Z80_GET_ADDR(cpu_pins);
+        if ((addr >= 0x8000) && (addr < 0xC000)) {
+            cpu_access = true;
         }
     }
-
-    /* tick the CTC and beepers */
-    for (int i = 0; i < num_ticks; i++) {
-        pins = z80ctc_tick(&sys->ctc, pins);
-        /* CTC channels 0 and 1 triggers control audio frequencies */
-        if (pins & Z80CTC_ZCTO0) {
-            beeper_toggle(&sys->beeper_1);
-        }
-        if (pins & Z80CTC_ZCTO1) {
-            beeper_toggle(&sys->beeper_2);
-        }
-        /* CTC channel 2 trigger controls video blink frequency */
-        if (pins & Z80CTC_ZCTO2) {
-            sys->blink_flag = !sys->blink_flag;
-        }
-        pins &= Z80_PIN_MASK;
-        beeper_tick(&sys->beeper_1);
-        if (beeper_tick(&sys->beeper_2)) {
-            /* new audio sample ready */
-            sys->sample_buffer[sys->sample_pos++] = sys->beeper_1.sample + sys->beeper_2.sample;
-            if (sys->sample_pos == sys->num_samples) {
-                if (sys->audio_cb) {
-                    sys->audio_cb(sys->sample_buffer, sys->num_samples, sys->user_data);
+    bool blink_bg = sys->blink_flag && (sys->pio_b & KC85_PIO_B_BLINK_ENABLED);
+    for (int i = 0; i < num_cpu_ticks; i++) {
+        /* every 2 CPU ticks, 8 pixels are decoded */
+        if (sys->h_tick & 1) {
+            /* decode visible 8-pixel group */
+            uint32_t x = sys->h_tick>>1;
+            uint32_t y = sys->v_count;
+            if (sys->pixel_buffer && (y < 256) && (x < 40)) {
+                uint32_t* dst_ptr = &(sys->pixel_buffer[y*_KC85_DISPLAY_WIDTH + x*8]);
+                uint32_t pixel_offset, color_offset;
+                if (x < 0x20) {
+                    /* left 256x256 area */
+                    pixel_offset = x | (((y>>2)&0x3)<<5) | ((y&0x3)<<7) | (((y>>4)&0xF)<<9);
+                    color_offset = x | (((y>>2)&0x3f)<<5);
                 }
-                sys->sample_pos = 0;
+                else {
+                    /* right 64x256 area */
+                    pixel_offset = 0x2000 + ((x&0x7) | (((y>>4)&0x3)<<3) | (((y>>2)&0x3)<<5) | ((y&0x3)<<7) | (((y>>6)&0x3)<<9));
+                    color_offset = 0x0800 + ((x&0x7) | (((y>>4)&0x3)<<3) | (((y>>2)&0x3)<<5) | (((y>>6)&0x3)<<7));
+                }
+                const uint8_t* pixel_ram = sys->ram[_KC85_IRM0_PAGE];
+                const uint8_t* color_ram = sys->ram[_KC85_IRM0_PAGE] + 0x2800;
+                uint8_t pixel_bits = pixel_ram[pixel_offset];
+                uint8_t color_bits = color_ram[color_offset];
+                bool force_bg = (blink_bg && (color_bits & 0x80)) | cpu_access;
+                _kc85_decode_8pixels(dst_ptr, pixel_bits, color_bits, force_bg);
+                cpu_access = false;
             }
         }
-    }    
+        /* scanline and frame update */
+        sys->h_tick++;
+        if (sys->h_tick >= 112) {
+            sys->h_tick = 0;
+            sys->v_count++;
+            if (sys->v_count == 312) {
+                sys->v_count = 0;
+                /* vertical sync, trigger CTC CLKTRG2 input for video blinking effect */
+                cpu_pins |= Z80CTC_CLKTRG2;
+            }
+        }
+    }
+    return cpu_pins;
+}
+
+static uint64_t _kc85_video_kc85_4_hicolor(kc85_t* sys, int num_cpu_ticks, uint64_t cpu_pins) {
+    for (int i = 0; i < num_cpu_ticks; i++) {
+        if (sys->h_tick & 1) {
+            uint32_t x = sys->h_tick>>1;
+            uint32_t y = sys->v_count;
+            if (sys->pixel_buffer && (y < 256) && (x < 40)) {
+                uint32_t* dst = &(sys->pixel_buffer[y*_KC85_DISPLAY_WIDTH + x*8]);
+                uint32_t irm_index = (sys->io84 & 1) * 2;
+                const uint8_t* pixel_ram = sys->ram[_KC85_IRM0_PAGE + irm_index];
+                const uint8_t* color_ram = sys->ram[_KC85_IRM0_PAGE + irm_index + 1];
+                uint32_t offset = (x<<8) | y;
+                uint8_t p0 = pixel_ram[offset];
+                uint8_t p1 = color_ram[offset];
+                /*
+                    Decode 8 pixels for the "HICOLOR" mode with 2-bits per-pixel color.
+                    p0 and p1 are the two bitplanes (taken from the pixel and color RAM
+                    bank). The color palette is hardwired.
+                */
+                dst[0] = _kc85_hicolor[((p0>>7)&1)|((p1>>6)&2)];
+                dst[1] = _kc85_hicolor[((p0>>6)&1)|((p1>>5)&2)];
+                dst[2] = _kc85_hicolor[((p0>>5)&1)|((p1>>4)&2)];
+                dst[3] = _kc85_hicolor[((p0>>4)&1)|((p1>>3)&2)];
+                dst[4] = _kc85_hicolor[((p0>>3)&1)|((p1>>2)&2)];
+                dst[5] = _kc85_hicolor[((p0>>2)&1)|((p1>>1)&2)];
+                dst[6] = _kc85_hicolor[((p0>>1)&1)|((p1>>0)&2)];
+                dst[7] = _kc85_hicolor[((p0>>0)&1)|((p1<<1)&2)];
+            }
+        }
+        sys->h_tick++;
+        if (sys->h_tick >= 113) {
+            sys->h_tick = 0;
+            sys->v_count++;
+            if (sys->v_count == 312) {
+                sys->v_count = 0;
+                cpu_pins |= Z80CTC_CLKTRG2;
+            }
+        }
+    }
+    return cpu_pins;
+}
+
+static uint64_t _kc85_video_kc85_4_std(kc85_t* sys, int num_cpu_ticks, uint64_t cpu_pins) {
+    bool blink_bg = sys->blink_flag && (sys->pio_b & KC85_PIO_B_BLINK_ENABLED);
+    for (int i = 0; i < num_cpu_ticks; i++) {
+        if (sys->h_tick & 1) {
+            uint32_t x = sys->h_tick>>1;
+            uint32_t y = sys->v_count;
+            if (sys->pixel_buffer && (y < 256) && (x < 40)) {
+                uint32_t* dst_ptr = &(sys->pixel_buffer[y*_KC85_DISPLAY_WIDTH + x*8]);
+                uint32_t irm_index = (sys->io84 & 1) * 2;
+                const uint8_t* pixel_ram = sys->ram[_KC85_IRM0_PAGE + irm_index];
+                const uint8_t* color_ram = sys->ram[_KC85_IRM0_PAGE + irm_index + 1];
+                uint32_t offset = (x<<8) | y;
+                uint8_t pixel_bits = pixel_ram[offset];
+                uint8_t color_bits = color_ram[offset];
+                bool force_bg = blink_bg && (color_bits & 0x80); /* no bus contention on KC85/4 */
+                _kc85_decode_8pixels(dst_ptr, pixel_bits, color_bits, force_bg);
+            }
+        }
+        sys->h_tick++;
+        if (sys->h_tick >= 113) {
+            sys->h_tick = 0;
+            sys->v_count++;
+            if (sys->v_count == 312) {
+                sys->v_count = 0;
+                cpu_pins |= Z80CTC_CLKTRG2;
+            }
+        }
+    }
+    return cpu_pins;
+}
+
+static uint64_t _kc85_tick_video(kc85_t* sys, int num_cpu_ticks, uint64_t cpu_pins) {
+    if (sys->type == KC85_TYPE_4) {
+        if (sys->io84 & KC85_IO84_HICOLOR) {
+            return _kc85_video_kc85_4_std(sys, num_cpu_ticks, cpu_pins);
+        }
+        else {
+            return _kc85_video_kc85_4_hicolor(sys, num_cpu_ticks, cpu_pins);
+        }
+    }
+    else {
+        return _kc85_video_kc85_2_3(sys, num_cpu_ticks, cpu_pins);
+    }
+}
+
+static uint64_t _kc85_tick(int num_ticks, uint64_t pins, void* user_data) {
+    kc85_t* sys = (kc85_t*) user_data;
 
     /* memory and IO requests */
     if (pins & Z80_MREQ) {
@@ -813,7 +968,38 @@ static uint64_t _kc85_tick(int num_ticks, uint64_t pins, void* user_data) {
             }
         }
     }
+    
+    /* tick the video system, this may return Z80CTC_CLKTRG2 on VSYNC */
+    pins = _kc85_tick_video(sys, num_ticks, pins);
 
+    /* tick the CTC and beepers */
+    for (int i = 0; i < num_ticks; i++) {
+        pins = z80ctc_tick(&sys->ctc, pins);
+        /* CTC channels 0 and 1 triggers control audio frequencies */
+        if (pins & Z80CTC_ZCTO0) {
+            beeper_toggle(&sys->beeper_1);
+        }
+        if (pins & Z80CTC_ZCTO1) {
+            beeper_toggle(&sys->beeper_2);
+        }
+        /* CTC channel 2 trigger controls video blink frequency */
+        if (pins & Z80CTC_ZCTO2) {
+            sys->blink_flag = !sys->blink_flag;
+        }
+        pins &= Z80_PIN_MASK;
+        beeper_tick(&sys->beeper_1);
+        if (beeper_tick(&sys->beeper_2)) {
+            /* new audio sample ready */
+            sys->sample_buffer[sys->sample_pos++] = sys->beeper_1.sample + sys->beeper_2.sample;
+            if (sys->sample_pos == sys->num_samples) {
+                if (sys->audio_cb) {
+                    sys->audio_cb(sys->sample_buffer, sys->num_samples, sys->user_data);
+                }
+                sys->sample_pos = 0;
+            }
+        }
+    }    
+    
     /* interrupt daisy chain, CTC is higher priority then PIO */
     Z80_DAISYCHAIN_BEGIN(pins)
     {
@@ -839,107 +1025,6 @@ static void _kc85_pio_out(int port_id, uint8_t data, void* user_data) {
         /* FIXME: audio volume */
     }
     _kc85_update_memory_map(sys);
-}
-
-/* hardwired foreground colors */
-static uint32_t _kc85_fg_pal[16] = {
-    0xFF000000,     /* black */
-    0xFFFF0000,     /* blue */
-    0xFF0000FF,     /* red */
-    0xFFFF00FF,     /* magenta */
-    0xFF00FF00,     /* green */
-    0xFFFFFF00,     /* cyan */
-    0xFF00FFFF,     /* yellow */
-    0xFFFFFFFF,     /* white */
-    0xFF000000,     /* black #2 */
-    0xFFFF00A0,     /* violet */
-    0xFF00A0FF,     /* orange */
-    0xFFA000FF,     /* purple */
-    0xFFA0FF00,     /* blueish green */
-    0xFFFFA000,     /* greenish blue */
-    0xFF00FFA0,     /* yellow-green */
-    0xFFFFFFFF,     /* white #2 */
-};
-
-/* background colors */
-static uint32_t _kc85_bg_pal[8] = {
-    0xFF000000,      /* black */
-    0xFFA00000,      /* dark-blue */
-    0xFF0000A0,      /* dark-red */
-    0xFFA000A0,      /* dark-magenta */
-    0xFF00A000,      /* dark-green */
-    0xFFA0A000,      /* dark-cyan */
-    0xFF00A0A0,      /* dark-yellow */
-    0xFFA0A0A0,      /* gray */
-};
-
-static inline void _kc85_decode_8pixels(uint32_t* ptr, uint8_t pixels, uint8_t colors, bool blink_bg) {
-    /*
-        select foreground- and background color:
-        bit 7: blinking
-        bits 6..3: foreground color
-        bits 2..0: background color
-
-        index 0 is background color, index 1 is foreground color
-    */
-    const uint8_t bg_index = colors & 0x7;
-    const uint8_t fg_index = (colors>>3)&0xF;
-    const unsigned int bg = _kc85_bg_pal[bg_index];
-    const unsigned int fg = (blink_bg && (colors & 0x80)) ? bg : _kc85_fg_pal[fg_index];
-    ptr[0] = pixels & 0x80 ? fg : bg;
-    ptr[1] = pixels & 0x40 ? fg : bg;
-    ptr[2] = pixels & 0x20 ? fg : bg;
-    ptr[3] = pixels & 0x10 ? fg : bg;
-    ptr[4] = pixels & 0x08 ? fg : bg;
-    ptr[5] = pixels & 0x04 ? fg : bg;
-    ptr[6] = pixels & 0x02 ? fg : bg;
-    ptr[7] = pixels & 0x01 ? fg : bg;   
-}
-
-static void _kc85_decode_scanline(kc85_t* sys) {
-    /* early out if no pixel buffer was set */
-    if (!sys->pixel_buffer) {
-        return;
-    }
-    const int y = sys->cur_scanline;
-    const bool blink_bg = sys->blink_flag && (sys->pio_b & KC85_PIO_B_BLINK_ENABLED);
-    const int width = _KC85_DISPLAY_WIDTH>>3;
-    unsigned int* dst_ptr = &(sys->pixel_buffer[y*_KC85_DISPLAY_WIDTH]);
-    if (KC85_TYPE_4 == sys->type) {
-        int irm_index = (sys->io84 & 1) * 2;
-        const uint8_t* pixel_data = sys->ram[_KC85_IRM0_PAGE + irm_index];
-        const uint8_t* color_data = sys->ram[_KC85_IRM0_PAGE + irm_index + 1];
-        for (int x = 0; x < width; x++) {
-            int offset = y | (x<<8);
-            uint8_t src_pixels = pixel_data[offset];
-            uint8_t src_colors = color_data[offset];
-            _kc85_decode_8pixels(&(dst_ptr[x<<3]), src_pixels, src_colors, blink_bg);
-        }
-    }
-    else {
-        const uint8_t* pixel_data = sys->ram[_KC85_IRM0_PAGE];
-        const uint8_t* color_data = sys->ram[_KC85_IRM0_PAGE] + 0x2800;
-        const int left_pixel_offset  = (((y>>2)&0x3)<<5) | ((y&0x3)<<7) | (((y>>4)&0xF)<<9);
-        const int left_color_offset  = (((y>>2)&0x3f)<<5);
-        const int right_pixel_offset = (((y>>4)&0x3)<<3) | (((y>>2)&0x3)<<5) | ((y&0x3)<<7) | (((y>>6)&0x3)<<9);
-        const int right_color_offset = (((y>>4)&0x3)<<3) | (((y>>2)&0x3)<<5) | (((y>>6)&0x3)<<7);
-        int pixel_offset, color_offset;
-        for (int x = 0; x < width; x++) {
-            if (x < 0x20) {
-                /* left 256x256 quad */
-                pixel_offset = x | left_pixel_offset;
-                color_offset = x | left_color_offset;
-            }
-            else {
-                /* right 64x256 strip */
-                pixel_offset = 0x2000 + ((x&0x7) | right_pixel_offset);
-                color_offset = 0x0800 + ((x&0x7) | right_color_offset);
-            }
-            uint8_t src_pixels = pixel_data[pixel_offset];
-            uint8_t src_colors = color_data[color_offset];
-            _kc85_decode_8pixels(&(dst_ptr[x<<3]), src_pixels, src_colors, blink_bg);
-        }
-    }
 }
 
 static void _kc85_init_memory_map(kc85_t* sys) {
@@ -1502,7 +1587,7 @@ static bool _kc85_load_kcc(kc85_t* sys, const uint8_t* ptr, int num_bytes) {
     if (hdr->num_addr > 2) {
         _kc85_load_start(sys, hdr->exec_addr_h<<8 | hdr->exec_addr_l);
     }
-    return false;
+    return true;
 }
 
 /* KC TAP file format support */

@@ -244,6 +244,7 @@ static int _cpc_fdc_seektrack(int drive, int track, void* user_data);
 static int _cpc_fdc_seeksector(int drive, upd765_sectorinfo_t* inout_info, void* user_data);
 static int _cpc_fdc_read(int drive, uint8_t h, void* user_data, uint8_t* out_data);
 static int _cpc_fdc_trackinfo(int drive, int side, void* user_data, upd765_sectorinfo_t* out_info);
+static void _cpc_fdc_driveinfo(int drive, void* user_data, upd765_driveinfo_t* out_info);
 
 #define _CPC_DEFAULT(val,def) (((val) != 0) ? (val) : (def));
 #define _CPC_CLEAR(val) memset(&val, 0, sizeof(val))
@@ -305,7 +306,7 @@ void cpc_init(cpc_t* sys, const cpc_desc_t* desc) {
     psg_desc.out_cb = _cpc_psg_out;
     psg_desc.tick_hz = _CPC_FREQUENCY / 4;
     psg_desc.sound_hz = _CPC_DEFAULT(desc->audio_sample_rate, 44100);
-    psg_desc.magnitude = _CPC_DEFAULT(desc->audio_volume, 0.7f);
+    psg_desc.magnitude = _CPC_DEFAULT(desc->audio_volume, 0.5f);
     psg_desc.user_data = sys;
     ay38910_init(&sys->psg, &psg_desc);
 
@@ -318,7 +319,7 @@ void cpc_init(cpc_t* sys, const cpc_desc_t* desc) {
     ga_desc.cclk_cb = _cpc_cclk;
     ga_desc.ram = &sys->ram[0][0];
     ga_desc.ram_size = sizeof(sys->ram);
-    ga_desc.rgba8_buffer = desc->pixel_buffer;
+    ga_desc.rgba8_buffer = (uint32_t*) desc->pixel_buffer;
     ga_desc.rgba8_buffer_size = desc->pixel_buffer_size;
     ga_desc.user_data = sys;
     am40010_init(&sys->ga, &ga_desc);
@@ -329,6 +330,7 @@ void cpc_init(cpc_t* sys, const cpc_desc_t* desc) {
     fdc_desc.seeksector_cb = _cpc_fdc_seeksector;
     fdc_desc.read_cb = _cpc_fdc_read;
     fdc_desc.trackinfo_cb = _cpc_fdc_trackinfo;
+    fdc_desc.driveinfo_cb = _cpc_fdc_driveinfo;
     fdc_desc.user_data = sys;
     upd765_init(&sys->fdc, &fdc_desc);
     fdd_init(&sys->fdd);
@@ -768,15 +770,25 @@ static void _cpc_init_keymap(cpc_t* sys) {
     }
 
     /* special keys */
-    kbd_register_key(&sys->kbd, 0x20, 5, 7, 0);    /* space */
-    kbd_register_key(&sys->kbd, 0x08, 1, 0, 0);    /* cursor left */
-    kbd_register_key(&sys->kbd, 0x09, 0, 1, 0);    /* cursor right */
-    kbd_register_key(&sys->kbd, 0x0A, 0, 2, 0);    /* cursor down */
-    kbd_register_key(&sys->kbd, 0x0B, 0, 0, 0);    /* cursor up */
-    kbd_register_key(&sys->kbd, 0x01, 9, 7, 0);    /* delete */
-    kbd_register_key(&sys->kbd, 0x0C, 2, 0, 0);    /* clr */
-    kbd_register_key(&sys->kbd, 0x0D, 2, 2, 0);    /* return */
-    kbd_register_key(&sys->kbd, 0x03, 8, 2, 0);    /* escape */
+    kbd_register_key(&sys->kbd, 0x20, 5, 7, 0); /* space */
+    kbd_register_key(&sys->kbd, 0x08, 1, 0, 0); /* cursor left */
+    kbd_register_key(&sys->kbd, 0x09, 0, 1, 0); /* cursor right */
+    kbd_register_key(&sys->kbd, 0x0A, 0, 2, 0); /* cursor down */
+    kbd_register_key(&sys->kbd, 0x0B, 0, 0, 0); /* cursor up */
+    kbd_register_key(&sys->kbd, 0x01, 9, 7, 0); /* delete */
+    kbd_register_key(&sys->kbd, 0x0C, 2, 0, 0); /* clr */
+    kbd_register_key(&sys->kbd, 0x0D, 2, 2, 0); /* return */
+    kbd_register_key(&sys->kbd, 0x03, 8, 2, 0); /* escape */
+    kbd_register_key(&sys->kbd, 0xF1, 1, 5, 0); /* F1...*/
+    kbd_register_key(&sys->kbd, 0xF2, 1, 6, 0);
+    kbd_register_key(&sys->kbd, 0xF3, 0, 5, 0);
+    kbd_register_key(&sys->kbd, 0xF4, 4, 2, 0);
+    kbd_register_key(&sys->kbd, 0xF5, 4, 1, 0);
+    kbd_register_key(&sys->kbd, 0xF6, 4, 0, 0);
+    kbd_register_key(&sys->kbd, 0xF7, 2, 1, 0);
+    kbd_register_key(&sys->kbd, 0xF8, 3, 1, 0);
+    kbd_register_key(&sys->kbd, 0xF9, 3, 0, 0);
+    kbd_register_key(&sys->kbd, 0xFA, 7, 1, 0); /* F0 -> F10 */
 }
 
 /* CPC6128 RAM block indices */
@@ -1004,7 +1016,7 @@ bool cpc_quickload(cpc_t* sys, const uint8_t* ptr, int num_bytes) {
 
 /*=== CASSETTE TAPE FILE LOADING =============================================*/
 /* CPU trap handler to check for casread */
-static int _cpc_trap_cb(uint16_t pc, int ticks, uint64_t pins, void* user_data) {
+static int _cpc_trap_cb(uint16_t pc, uint32_t ticks, uint64_t pins, void* user_data) {
     cpc_t* sys = (cpc_t*) user_data;
     return (pc == sys->casread_trap) ? 1 : 0;
 }
@@ -1122,6 +1134,26 @@ static int _cpc_fdc_trackinfo(int drive, int side, void* user_data, upd765_secto
         }
     }
     return FDD_RESULT_NOT_READY;
+}
+
+static void _cpc_fdc_driveinfo(int drive, void* user_data, upd765_driveinfo_t* out_info) {
+    cpc_t* sys = (cpc_t*) user_data;
+    if ((0 == drive) && sys->fdd.has_disc) {
+        out_info->physical_track = sys->fdd.cur_track_index;
+        out_info->sides = sys->fdd.disc.num_sides;
+        out_info->head = sys->fdd.cur_side;
+        out_info->ready = sys->fdd.motor_on;
+        out_info->write_protected = sys->fdd.disc.write_protected;
+        out_info->fault = false;
+    }
+    else {
+        out_info->physical_track = 0;
+        out_info->sides = 1;
+        out_info->head = 0;
+        out_info->ready = false;
+        out_info->write_protected = true;
+        out_info->fault = false;
+    }
 }
 
 bool cpc_insert_disc(cpc_t* sys, const uint8_t* ptr, int num_bytes) {

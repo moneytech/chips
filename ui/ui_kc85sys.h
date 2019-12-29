@@ -118,8 +118,8 @@ void ui_kc85sys_draw(ui_kc85sys_t* win) {
     if (!win->open) {
         return;
     }
-    ImGui::SetNextWindowPos(ImVec2(win->init_x, win->init_y), ImGuiSetCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(win->init_w, win->init_h), ImGuiSetCond_Once);
+    ImGui::SetNextWindowPos(ImVec2(win->init_x, win->init_y), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(win->init_w, win->init_h), ImGuiCond_Once);
     if (ImGui::Begin(win->title, &win->open)) {
         if (ImGui::CollapsingHeader("Port 88h (PIO A)", ImGuiTreeNodeFlags_DefaultOpen)) {
             const uint8_t v = win->kc85->pio_a;
@@ -169,9 +169,8 @@ void ui_kc85sys_draw(ui_kc85sys_t* win) {
             }
         }
         if (ImGui::CollapsingHeader("Display", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text("Current Scanline: %d", win->kc85->cur_scanline);
-            ImGui::Text("Scanline Period:  %d", win->kc85->scanline_period);
-            ImGui::Text("Scanline Tick:    %d", win->kc85->scanline_counter);
+            ImGui::Text("Vert Count:    %d", win->kc85->v_count);
+            ImGui::Text("Hori Tick:     %d", win->kc85->h_tick);
         }
     }
     ImGui::End();
